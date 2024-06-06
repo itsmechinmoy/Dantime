@@ -34,7 +34,7 @@ async function sendDiscordMessage(title, description, color, timestamp) {
 
 async function checkMessageExists(messageId) {
     try {
-        const message = await webhookClient.fetchMessage(messageId);
+        const message = await webhookClient.messages.fetch(messageId);
         return message !== null;
     } catch (error) {
         if (error.code === 10008) { // Unknown Message error code
@@ -46,65 +46,68 @@ async function checkMessageExists(messageId) {
     }
 }
 
-async function monitorWebsite(req, res) {
+async function monitorWebsite() {
     let previousStatus = await kv.get('previousStatus');
     let previousMessageId = await kv.get('previousMessageId');
 
-    try {
-        const response = await axios.get(WEBSITE_URL);
-        console.log("Website is available.");
-        if (previousStatus !== "up") {
-            // If previous status was not "up", it means status changed to "up"
-            previousMessageId = await sendDiscordMessage(
-                "Dantotsu is Available",
-                "Available",
-                '#dedede',
-                new Date()
-            );
-            previousStatus = "up";
-            await kv.set('previousStatus', previousStatus);
-            await kv.set('previousMessageId', previousMessageId);
-        } else if (previousMessageId) {
-            const exists = await checkMessageExists(previousMessageId);
-            if (!exists) {
-                // Resend the message if the previous message is deleted
+    while (true) {
+        try {
+            const response = await axios.get(WEBSITE_URL);
+            console.log("Website is available.");
+            if (previousStatus !== "up") {
+                // If previous status was not "up", it means status changed to "up"
                 previousMessageId = await sendDiscordMessage(
                     "Dantotsu is Available",
                     "Available",
                     '#dedede',
                     new Date()
                 );
+                previousStatus = "up";
+                await kv.set('previousStatus', previousStatus);
                 await kv.set('previousMessageId', previousMessageId);
+            } else if (previousMessageId) {
+                const exists = await checkMessageExists(previousMessageId);
+                if (!exists) {
+                    // Resend the message if the previous message is deleted
+                    previousMessageId = await sendDiscordMessage(
+                        "Dantotsu is Available",
+                        "Available",
+                        '#dedede',
+                        new Date()
+                    );
+                    await kv.set('previousMessageId', previousMessageId);
+                }
             }
-        }
-    } catch (error) {
-        console.error("Website is down:", error.message);
-        if (previousStatus !== "down") {
-            // If previous status was not "down", it means status changed to "down"
-            previousMessageId = await sendDiscordMessage(
-                "Dantotsu is Reporting Error",
-                `HTTP ERROR ${error.response ? error.response.status : 'Unknown'}`,
-                '#dedede',
-                new Date()
-            );
-            previousStatus = "down";
-            await kv.set('previousStatus', previousStatus);
-            await kv.set('previousMessageId', previousMessageId);
-        } else if (previousMessageId) {
-            const exists = await checkMessageExists(previousMessageId);
-            if (!exists) {
-                // Resend the message if the previous message is deleted
+        } catch (error) {
+            console.error("Website is down:", error.message);
+            if (previousStatus !== "down") {
+                // If previous status was not "down", it means status changed to "down"
                 previousMessageId = await sendDiscordMessage(
                     "Dantotsu is Reporting Error",
                     `HTTP ERROR ${error.response ? error.response.status : 'Unknown'}`,
                     '#dedede',
                     new Date()
                 );
+                previousStatus = "down";
+                await kv.set('previousStatus', previousStatus);
                 await kv.set('previousMessageId', previousMessageId);
+            } else if (previousMessageId) {
+                const exists = await checkMessageExists(previousMessageId);
+                if (!exists) {
+                    // Resend the message if the previous message is deleted
+                    previousMessageId = await sendDiscordMessage(
+                        "Dantotsu is Reporting Error",
+                        `HTTP ERROR ${error.response ? error.response.status : 'Unknown'}`,
+                        '#dedede',
+                        new Date()
+                    );
+                    await kv.set('previousMessageId', previousMessageId);
+                }
             }
         }
+        await new Promise(resolve => setTimeout(resolve, 60000)); // Check every minute
     }
-    res.status(200).send('Monitoring completed');
 }
 
-module.exports = (req, res) => monitorWebsite(req, res);
+console.log("Starting website monitoring...");
+monitorWebsite();
