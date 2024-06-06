@@ -2,7 +2,7 @@ name: Cron Job
 
 on:
   schedule:
-    - cron: '*/1 * * * *'  # Every 1 minute
+    - cron: '*/5 * * * *'  # Every 15 minutes
   workflow_dispatch:
 
 jobs:
