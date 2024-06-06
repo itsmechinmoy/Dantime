@@ -1,0 +1,14 @@
+{
+  "name": "uptime monitoring",
+  "version": "1.0.0",
+  "description": "using it for monitoring dantotsu site",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^0.24.0",
+    "discord.js": "^13.1.0",
+    "dotenv": "^10.0.0"
+  }
+}
