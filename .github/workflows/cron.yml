@@ -2,7 +2,8 @@ name: Cron Job
 
 on:
   schedule:
-    - cron: '*/1 * * * *'  # Every 1 minutes
+    - cron: '*/1 * * * *'  # Every 1 minute
+  workflow_dispatch:
 
 jobs:
   call-api:
