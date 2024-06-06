@@ -1,12 +1,19 @@
 const axios = require('axios');
 const { WebhookClient, MessageEmbed } = require('discord.js');
+const { kv } = require('@vercel/kv');
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const WEBSITE_URL = process.env.WEBSITE_URL;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
+if (!WEBSITE_URL || !WEBHOOK_URL) {
+    console.error("Please provide WEBSITE_URL and WEBHOOK_URL in the .env file.");
+    process.exit(1);
+}
+
 const webhookClient = new WebhookClient({ url: WEBHOOK_URL });
-let previousStatus = null; // Variable to store the previous status
-let previousMessageId = null; // Variable to store the previous message ID
 
 async function sendDiscordMessage(title, description, color, timestamp) {
     const embed = new MessageEmbed()
@@ -40,6 +47,9 @@ async function checkMessageExists(messageId) {
 }
 
 async function monitorWebsite(req, res) {
+    let previousStatus = await kv.get('previousStatus');
+    let previousMessageId = await kv.get('previousMessageId');
+
     try {
         const response = await axios.get(WEBSITE_URL);
         console.log("Website is available.");
@@ -52,6 +62,8 @@ async function monitorWebsite(req, res) {
                 new Date()
             );
             previousStatus = "up";
+            await kv.set('previousStatus', previousStatus);
+            await kv.set('previousMessageId', previousMessageId);
         } else if (previousMessageId) {
             const exists = await checkMessageExists(previousMessageId);
             if (!exists) {
@@ -62,6 +74,7 @@ async function monitorWebsite(req, res) {
                     '#dedede',
                     new Date()
                 );
+                await kv.set('previousMessageId', previousMessageId);
             }
         }
     } catch (error) {
@@ -75,6 +88,8 @@ async function monitorWebsite(req, res) {
                 new Date()
             );
             previousStatus = "down";
+            await kv.set('previousStatus', previousStatus);
+            await kv.set('previousMessageId', previousMessageId);
         } else if (previousMessageId) {
             const exists = await checkMessageExists(previousMessageId);
             if (!exists) {
@@ -85,6 +100,7 @@ async function monitorWebsite(req, res) {
                     '#dedede',
                     new Date()
                 );
+                await kv.set('previousMessageId', previousMessageId);
             }
         }
     }
