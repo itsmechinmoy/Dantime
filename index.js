@@ -25,7 +25,7 @@ async function sendDiscordMessage(title, description, color, timestamp) {
 
     try {
         const message = await webhookClient.send({ embeds: [embed] });
-        console.log("Discord message sent successfully.");
+        console.log("Discord message sent successfully. Message ID:", message.id);
         return message.id; // Return the message ID
     } catch (error) {
         console.error("Failed to send Discord message:", error);
