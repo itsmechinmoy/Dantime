@@ -1,34 +1,20 @@
 const axios = require('axios');
 const { WebhookClient, MessageEmbed } = require('discord.js');
 const dotenv = require('dotenv');
-const mongoose = require('mongoose');
+const { MongoClient } = require('mongodb');
 
 dotenv.config();
 
 const WEBSITE_URL = process.env.WEBSITE_URL;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGO_URI;
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME;
+const MONGO_COLLECTION_NAME = process.env.MONGO_COLLECTION_NAME;
 
-if (!WEBSITE_URL || !WEBHOOK_URL || !MONGODB_URI) {
-    console.error("Please provide WEBSITE_URL, WEBHOOK_URL, and MONGODB_URI in the .env file.");
+if (!WEBSITE_URL || !WEBHOOK_URL || !MONGO_URI || !MONGO_DB_NAME || !MONGO_COLLECTION_NAME) {
+    console.error("Please provide WEBSITE_URL, WEBHOOK_URL, MONGO_URI, MONGO_DB_NAME, and MONGO_COLLECTION_NAME in the .env file.");
     process.exit(1);
 }
-
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("Connected to MongoDB"))
-    .catch(err => {
-        console.error("Failed to connect to MongoDB", err);
-        process.exit(1);
-    });
-
-const messageSchema = new mongoose.Schema({
-    status: String,
-    messageId: String,
-    timestamp: Date
-});
-
-const Message = mongoose.model('Message', messageSchema);
 
 const webhookClient = new WebhookClient({ url: WEBHOOK_URL });
 let previousStatus = null; // Variable to store the previous status
@@ -50,118 +36,86 @@ async function sendDiscordMessage(title, description, color, timestamp) {
     }
 }
 
-async function getPreviousMessage(status) {
-    try {
-        return await Message.findOne({ status });
-    } catch (error) {
-        console.error("Failed to get previous message from database:", error);
-        return null;
-    }
+async function connectToMongoDB() {
+    const client = new MongoClient(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    await client.connect();
+    console.log("Connected to MongoDB");
+    return client.db(MONGO_DB_NAME).collection(MONGO_COLLECTION_NAME);
 }
 
-async function saveMessage(status, messageId) {
-    try {
-        // Remove any existing message for this status
-        await Message.deleteOne({ status });
-
-        // Save the new message
-        const message = new Message({ status, messageId, timestamp: new Date() });
-        await message.save();
-        console.log("Message saved to database. Status:", status, "Message ID:", messageId);
-    } catch (error) {
-        console.error("Failed to save message to database:", error);
-    }
+async function getPreviousMessageId(collection) {
+    const document = await collection.findOne({});
+    return document ? document.messageId : null;
 }
 
-async function deleteMessage(status) {
-    try {
-        await Message.deleteOne({ status });
-        console.log("Message deleted from database. Status:", status);
-    } catch (error) {
-        console.error("Failed to delete message from database:", error);
-    }
+async function updateMessageId(collection, newMessageId) {
+    await collection.updateOne({}, { $set: { messageId: newMessageId } }, { upsert: true });
+    console.log(`Message ID ${newMessageId} added to the database.`);
 }
 
-async function checkMessageExists(messageId) {
-    try {
-        const message = await webhookClient.fetchMessage(messageId);
-        console.log("Message exists. ID:", messageId);
-        return message !== null;
-    } catch (error) {
-        if (error.code === 10008) { // Unknown Message error code
-            console.log("Message does not exist. ID:", messageId);
-            return false;
-        } else {
-            console.error("Error fetching message:", error);
-            return true; // Assuming message exists if other errors occur
-        }
-    }
+async function deleteMessageId(collection) {
+    await collection.deleteOne({});
+    console.log("Message ID removed from the database.");
 }
 
 async function monitorWebsite() {
+    const collection = await connectToMongoDB();
+
     while (true) {
         try {
             const response = await axios.get(WEBSITE_URL);
             console.log("Website is available.");
             if (previousStatus !== "up") {
-                console.log("Status changed to up. Sending new message.");
+                // If previous status was not "up", it means status changed to "up"
                 const messageId = await sendDiscordMessage(
                     "Dantotsu is Available",
                     "Available",
                     '#dedede',
                     new Date()
                 );
-                if (messageId) {
-                    await saveMessage("up", messageId);
-                }
+                await updateMessageId(collection, messageId);
                 previousStatus = "up";
             } else {
-                const previousMessage = await getPreviousMessage("up");
-                if (previousMessage) {
-                    const exists = await checkMessageExists(previousMessage.messageId);
+                const previousMessageId = await getPreviousMessageId(collection);
+                if (previousMessageId) {
+                    const exists = await webhookClient.fetchMessage(previousMessageId).then(() => true).catch(() => false);
                     if (!exists) {
-                        console.log("Previous message deleted. Resending message.");
+                        // Resend the message if the previous message is deleted
                         const messageId = await sendDiscordMessage(
                             "Dantotsu is Available",
                             "Available",
                             '#dedede',
                             new Date()
                         );
-                        if (messageId) {
-                            await saveMessage("up", messageId);
-                        }
+                        await updateMessageId(collection, messageId);
                     }
                 }
             }
         } catch (error) {
             console.error("Website is down:", error.message);
             if (previousStatus !== "down") {
-                console.log("Status changed to down. Sending new message.");
+                // If previous status was not "down", it means status changed to "down"
                 const messageId = await sendDiscordMessage(
                     "Dantotsu is Reporting Error",
                     `HTTP ERROR ${error.response ? error.response.status : 'Unknown'}`,
                     '#dedede',
                     new Date()
                 );
-                if (messageId) {
-                    await saveMessage("down", messageId);
-                }
+                await updateMessageId(collection, messageId);
                 previousStatus = "down";
             } else {
-                const previousMessage = await getPreviousMessage("down");
-                if (previousMessage) {
-                    const exists = await checkMessageExists(previousMessage.messageId);
+                const previousMessageId = await getPreviousMessageId(collection);
+                if (previousMessageId) {
+                    const exists = await webhookClient.fetchMessage(previousMessageId).then(() => true).catch(() => false);
                     if (!exists) {
-                        console.log("Previous message deleted. Resending message.");
+                        // Resend the message if the previous message is deleted
                         const messageId = await sendDiscordMessage(
                             "Dantotsu is Reporting Error",
                             `HTTP ERROR ${error.response ? error.response.status : 'Unknown'}`,
                             '#dedede',
                             new Date()
                         );
-                        if (messageId) {
-                            await saveMessage("down", messageId);
-                        }
+                        await updateMessageId(collection, messageId);
                     }
                 }
             }
