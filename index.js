@@ -37,7 +37,7 @@ async function sendDiscordMessage(title, description, color, timestamp) {
 }
 
 async function connectToMongoDB() {
-    const client = new MongoClient(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    const client = new MongoClient(MONGO_URI);
     await client.connect();
     console.log("Connected to MongoDB");
     return client.db(MONGO_DB_NAME).collection(MONGO_COLLECTION_NAME);
@@ -49,13 +49,17 @@ async function getPreviousMessageId(collection) {
 }
 
 async function updateMessageId(collection, newMessageId) {
+    const previousMessageId = await getPreviousMessageId(collection);
+    if (previousMessageId) {
+        await deleteMessageId(collection, previousMessageId);
+    }
     await collection.updateOne({}, { $set: { messageId: newMessageId } }, { upsert: true });
     console.log(`Message ID ${newMessageId} added to the database.`);
 }
 
-async function deleteMessageId(collection) {
+async function deleteMessageId(collection, messageId) {
     await collection.deleteOne({});
-    console.log("Message ID removed from the database.");
+    console.log(`Old Message ID ${messageId} removed from the database.`);
 }
 
 async function monitorWebsite() {
