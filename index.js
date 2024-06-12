@@ -128,5 +128,5 @@ async function monitorWebsite() {
     }
 }
 
-console.log("Starting website monitoring...");
-monitorWebsite();
+// Export the monitorWebsite function as the default export
+module.exports = monitorWebsite;
